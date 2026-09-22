@@ -122,50 +122,51 @@ class EurothermEPC3008:
     facilitate the user's final experience."""
     
     def __init__(self, ip : str = None):
-        self.resolution_factor = None
-        self.list_of_init_values = None
-        if not ip :
-            self.ip = input("Enter IP address (example: 134.212.36.218): ")
-        else :
-            self.ip = ip
-        self.protocol = ModbusTCP(self.ip)
-    
-    def initialize_regulator(self, target_value: float = None, sp_high_limit: float = None, sp_low_limit: float = None) -> bool:
-        """Initializes the regulator with specified values and returns True if successful."""
+        self.resolution_factor = 10 #valeur par défaut, la température lue est multipliée par 10 en sortie du régulateur
+        try:
+            self.protocol = ModbusTCP(ip)
+        except:
+            pass
         if not self.protocol.client:
-            return False
-    
-        # Récupère la résolution, avec une valeur par défaut si échec
-        resolution = self.get_resolution()
-        if resolution is None:
-            self.resolution_factor = 1  # Valeur par défaut
-        else:
-            self.resolution_factor = resolution
-    
-        # Initialise les valeurs
-        self.list_of_init_values = [time.strftime("%Y-%m-%d", time.localtime()), time.strftime("%H:%M:%S", time.localtime())]
-        self.force_standby()
-        self.list_of_init_values.append(self.get_temp_units())
-        self.list_of_init_values.append(self.get_sp_rate_units())
-        print(f"Regulator's units are : {self.list_of_init_values[2]} for set point and {self.list_of_init_values[3]} for ramp's speed.")
-        self.list_of_init_values.append(self.get_pv_status())
-    
-        if target_value is not None:
-            self.set_target_sp(target_value)
-        self.list_of_init_values.append(self.get_target_sp())
-    
-        if sp_high_limit is not None:
-            self.set_sp_high_limit(sp_high_limit)
-        self.list_of_init_values.append(self.get_sp_high_limit())
-    
-        if sp_low_limit is not None:
-            self.set_sp_low_limit(sp_low_limit)
-        self.list_of_init_values.append(self.get_sp_low_limit())
-    
-        self.stop_standby()
+            raise ConnectionError(f"addess {ip} not found")
         self.set_automatic_mode()
-    
-        return True
+
+    # def initialize_regulator(self, target_value: float = None, sp_high_limit: float = None, sp_low_limit: float = None) -> bool:
+    #     """Initializes the regulator with specified values and returns True if successful."""
+    #     if not self.protocol.client:
+    #         return False
+    #
+    #     # Récupère la résolution, avec une valeur par défaut si échec
+    #     resolution = self.get_resolution()
+    #     if resolution is None:
+    #         self.resolution_factor = 1  # Valeur par défaut
+    #     else:
+    #         self.resolution_factor = resolution
+    #
+    #     # Initialise les valeurs
+    #     self.list_of_init_values = [time.strftime("%Y-%m-%d", time.localtime()), time.strftime("%H:%M:%S", time.localtime())]
+    #     self.force_standby()
+    #     self.list_of_init_values.append(self.get_temp_units())
+    #     self.list_of_init_values.append(self.get_sp_rate_units())
+    #     print(f"Regulator's units are : {self.list_of_init_values[2]} for set point and {self.list_of_init_values[3]} for ramp's speed.")
+    #     self.list_of_init_values.append(self.get_pv_status())
+    #
+    #     if target_value is not None:
+    #         self.set_target_sp(target_value)
+    #     self.list_of_init_values.append(self.get_target_sp())
+    #
+    #     if sp_high_limit is not None:
+    #         self.set_sp_high_limit(sp_high_limit)
+    #     self.list_of_init_values.append(self.get_sp_high_limit())
+    #
+    #     if sp_low_limit is not None:
+    #         self.set_sp_low_limit(sp_low_limit)
+    #     self.list_of_init_values.append(self.get_sp_low_limit())
+    #
+    #     self.stop_standby()
+    #     self.set_automatic_mode()
+    #
+    #     return True
 
     # The following methods read or write values to EPC3008 devices.
     # Addresses may change between units, verify them in Eurotherm iTools software.
@@ -181,6 +182,9 @@ class EurothermEPC3008:
     adr_resolution = 1922
     adr_pv = 289
     adr_pv_status = 1932
+
+    #IO tab
+    adr_sense = 12681
     
     # CT tab
     adr_leak_current = 1591
@@ -389,29 +393,6 @@ class EurothermEPC3008:
                                       time.strftime("%H:%M:%S", time.localtime()), self.get_pv(),
                                       self.get_target_sp(), self.get_sp_rate_done()]
 
-    async def automatic_data_grab_iterations(self, loop_number : int = 25, sleeping_time = 1) -> list[np.ndarray]:
-        """Makes loop_number data grab waiting sleeping_time between each then returns data.
-        ================================
-        loop_number : int (default = 25, number of data grab)
-        sleeping_time : int (default = 1, waiting time in seconds between two consecutive data grabs)"""
-        list_of_grabbed_data = []
-        for _ in range(0, loop_number):
-            list_of_grabbed_data.append(self.useful_data())
-            await asyncio.sleep(sleeping_time)
-        return np.array(list_of_grabbed_data)
-    
-    async def automatic_data_grab_duration(self, sleeping_time : int = 1, duration : str = '00:00:30') -> np.ndarray:
-        """Returns an array of data grabbed every sleeping_time during duration in HH:MM:SS format.
-        =================================
-        sleeping_time : int (default = 1, waiting time in seconds between two consecutive data grabs)
-        duration : str (default = '00:00:30', duration of the loop in HH:MM:SS format)"""
-        list_of_grabbed_data = []
-        ending_time = self.protocol.get_ending_time(duration)
-        print(f"automatic_data_grab_duration ends at : {ending_time}")
-        while ending_time > time.strftime("%H:%M:%S", time.localtime()):
-            list_of_grabbed_data.append(self.useful_data())
-            await asyncio.sleep(sleeping_time)
-        return np.array(list_of_grabbed_data)
     
     async def automatic_data_grab_temperature_value(self, target_temp : float, sleeping_time : int = 1,
                                                     limit_duration : str = '00:00:00') -> np.ndarray:

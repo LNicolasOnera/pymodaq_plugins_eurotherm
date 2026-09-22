@@ -7,20 +7,10 @@ from pymodaq_gui.parameter import Parameter
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.data import DataFromPlugins
 
-#  TODO:
-#  Replace the following fake import with the import of the real Python wrapper of your instrument. Here we suppose that
-#  the wrapper is in the hardware directory, but it could come from an external librairy like pylablib or pymeasure.
 from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008
 
-# TODO:
-# (1) change the name of the following class to DAQ_0DViewer_TheNameOfYourChoice
-# (2) change the name of this file to daq_0Dviewer_TheNameOfYourChoice ("TheNameOfYourChoice" should be the SAME
-#     for the class name and the file name.)
-# (3) this file should then be put into the right folder, namely IN THE FOLDER OF THE PLUGIN YOU ARE DEVELOPING:
-#     pymodaq_plugins_my_plugin/daq_viewer_plugins/plugins_0D
 
-
-class DAQ_0DViewer_Eurotherm(DAQ_Viewer_base):
+class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
     """ Instrument plugin class for a OD viewer.
     
     This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Viewer module through inheritance via
@@ -43,16 +33,20 @@ class DAQ_0DViewer_Eurotherm(DAQ_Viewer_base):
 
     """
     params = comon_parameters+[
-        ## TODO for your custom plugin: elements to be added here as dicts in order to control your custom stage
+        {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
+        {'title': 'Name', 'name': 'name', 'type': 'str', 'value': 'Test'},
+        {'title': 'Ramp speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
+        {'title': 'Units', 'name': 'units', 'type': 'group', 'children': [
+            {'title': 'Temperature', 'name': 'temp', 'type': 'str', 'value': '', 'readonly': True},
+            {'title': 'Ramp speed', 'name': 'ramp_speed', 'type': 'str', 'value': '', 'readonly': True}
+        ]},
         ]
 
     def ini_attributes(self):
-        #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
-        #  autocompletion
         self.controller: EurothermEPC3008 = None
-
-        #TODO declare here attributes you want/need to init with a default value
-        pass
+        self.ip = self.settings.child('ip_address').value()
+        self.name=self.settings.child('name').value()
+        self.ramp_speed = self.settings.child('ramp_speed').value()
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -62,96 +56,50 @@ class DAQ_0DViewer_Eurotherm(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        ## TODO for your custom plugin
-        if param.name() == "a_parameter_you've_added_in_self.params":
-           self.controller.your_method_to_apply_this_param_change()  # when writing your own plugin replace this line
-#        elif ...
-        ##
+        if param.name() == "ip_address":
+            self.controller.protocol.close_connection()
+            self.ip=self.settings.child('ip_address').value()
+
 
     def ini_detector(self, controller=None):
-        """Detector communication initialization
-
-        Parameters
-        ----------
-        controller: (object)
-            custom object of a PyMoDAQ plugin (Slave case). None if only one actuator/detector by controller
-            (Master case)
-
-        Returns
-        -------
-        info: str
-        initialized: bool
-            False if initialization failed otherwise True
-        """
-
-        raise NotImplementedError  # TODO when writing your own plugin remove this line and modify the one below
+        """Detector communication initialization"""
         if self.is_master:
-            self.controller = PythonWrapperObjectOfYourInstrument()  #instantiate you driver with whatever arguments are needed
-            self.controller.open_communication() # call eventual methods
-            initialized = self.controller.a_method_or_atttribute_to_check_if_init()  # TODO
+            self.controller = EurothermEPC3008(self.ip)
+
+            initialized = True
         else:
             self.controller = controller
             initialized = True
 
-        # TODO for your custom plugin (optional) initialize viewers panel with the future type of data
-        self.dte_signal_temp.emit(DataToExport(name='myplugin',
-                                               data=[DataFromPlugins(name='Mock1',
-                                                                    data=[np.array([0]), np.array([0])],
-                                                                    dim='Data0D',
-                                                                    labels=['Mock1', 'label2'])]))
+        self.settings.child('units', 'temp').setValue(str(self.controller.get_temp_units()))
+        self.settings.child('units', 'ramp_speed').setValue(str(self.controller.get_sp_rate_units()))
 
-        info = "Whatever info you want to log"
+        self.dte_signal_temp.emit(DataToExport(name=self.name,
+                                               data=[DataFromPlugins(name='Temp (°C)',
+                                                                    data=[np.array([0])],
+                                                                    dim='Data0D',
+                                                                    labels=[self.name])]))
+
+        print(f"Connected to {self.ip}")
+        info = f"EPC3008 {self.ip} connected"
         return info, initialized
 
     def close(self):
         """Terminate the communication protocol"""
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        if self.is_master:
-            #  self.controller.your_method_to_terminate_the_communication()  # when writing your own plugin replace this line
-            ...
+        self.controller.protocol.close_connection()
 
     def grab_data(self, Naverage=1, **kwargs):
-        """Start a grab from the detector
+        """Start a grab from the detector"""
 
-        Parameters
-        ----------
-        Naverage: int
-            Number of hardware averaging (if hardware averaging is possible, self.hardware_averaging should be set to
-            True in class preamble and you should code this implementation)
-        kwargs: dict
-            others optionals arguments
-        """
-        ## TODO for your custom plugin: you should choose EITHER the synchrone or the asynchrone version following
-
-        # synchrone version (blocking function)
-        raise NotImplementedError  # when writing your own plugin remove this line
-        data_tot = self.controller.your_method_to_start_a_grab_snap()
-        self.dte_signal.emit(DataToExport(name='myplugin',
-                                          data=[DataFromPlugins(name='Mock1', data=data_tot,
-                                                                dim='Data0D', labels=['dat0', 'data1'])]))
-        #########################################################
-
-        # asynchrone version (non-blocking function with callback)
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_start_a_grab_snap(self.callback)  # when writing your own plugin replace this line
-        #########################################################
+        data = np.array([self.controller.get_pv()])
+        self.dte_signal.emit(DataToExport(name=self.name,
+                                          data=[DataFromPlugins(name='Temp (°C)', data=data,
+                                                                dim='Data0D', labels=['Temp (°C)'])]))
 
 
-    def callback(self):
-        """optional asynchrone method called when the detector has finished its acquisition of data"""
-        data_tot = self.controller.your_method_to_get_data_from_buffer()
-        self.dte_signal.emit(DataToExport(name='myplugin',
-                                          data=[DataFromPlugins(name='Mock1', data=data_tot,
-                                                                dim='Data0D', labels=['dat0', 'data1'])]))
 
     def stop(self):
         """Stop the current grab hardware wise if necessary"""
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_stop_acquisition()  # when writing your own plugin replace this line
-        self.emit_status(ThreadCommand('Update_Status', ['Some info you want to log']))
-        ##############################
         return ''
 
 
