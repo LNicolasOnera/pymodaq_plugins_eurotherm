@@ -1,4 +1,4 @@
-
+import numpy as np
 from typing import Union, List, Dict
 from pymodaq.control_modules.move_utility_classes import (DAQ_Move_base, comon_parameters_fun,
                                                           main, DataActuatorType, DataActuator)
@@ -30,39 +30,34 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
     # TODO add your particular attributes here if any
 
     """
-    is_multiaxes = False  # TODO for your plugin set to True if this plugin is controlled for a multiaxis controller
-    _axis_names: Union[List[str], Dict[str, int]] = ['Axis1', 'Axis2']  # TODO for your plugin: complete the list
-    _controller_units: Union[str, List[str]] = 'mm'  # TODO for your plugin: put the correct unit here, it could be
-    # TODO  a single str (the same one is applied to all axes) or a list of str (as much as the number of axes)
-    _epsilon: Union[float, List[float]] = 0.1  # TODO replace this by a value that is correct depending on your controller
-    # TODO it could be a single float of a list of float (as much as the number of axes)
-    data_actuator_type = DataActuatorType.DataActuator  # wether you use the new data style for actuator otherwise set this
-    # as  DataActuatorType.float  (or entirely remove the line)
+    is_multiaxes = False
+    _axis_names: Union[List[str], Dict[str, int]] = ['Temperature']
+    _controller_units: Union[str, List[str]] = '°C'
+    _epsilon: Union[float, List[float]] = 0.1
+    data_actuator_type = DataActuatorType.float
 
     params = [
-                ] + comon_parameters_fun(is_multiaxes, axis_names=_axis_names, epsilon=_epsilon)
-    # _epsilon is the initial default value for the epsilon parameter allowing pymodaq to know if the controller reached
-    # the target value. It is the developer responsibility to put here a meaningful value
+        {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
+        {'title': 'EPC Name', 'name': 'epc_name', 'type': 'str', 'value': 'Test'},
+        {'title': 'Ramp speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
+        {'title': 'Ramp unit', 'name': 'ramp_unit', 'type': 'str', 'value': '', 'readonly': True},
+                ] + comon_parameters_fun(is_multiaxes, axis_names=_axis_names, epsilon=0.1)
 
     def ini_attributes(self):
-        #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
-        #  autocompletion
         self.controller: EurothermEPC3008 = None
-
-        #TODO declare here attributes you want/need to init with a default value
-        pass
+        self.ip = self.settings.child('ip_address').value()
+        self.epc_name=self.settings.child('epc_name').value()
+        self.ramp_speed = self.settings.child('ramp_speed').value()
 
     def get_actuator_value(self) -> DataActuator:
         """Get the current value from the hardware with scaling conversion.
-
         Returns
         -------
         float: The position obtained after scaling conversion.
         """
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        pos = DataActuator(data=self.controller.your_method_to_get_the_actuator_value(),  # when writing your own plugin replace this line
-                           units=self.axis_unit)
+        # pos = DataActuator(data=[np.array([self.controller.get_pv()])],  # when writing your own plugin replace this line
+        #                    units=self.axis_unit)
+        pos = DataActuator(data=self.controller.get_pv(), units=self.axis_unit)
         pos = self.get_position_with_scaling(pos)
         return pos
 
@@ -82,11 +77,8 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
 
     def close(self):
         """Terminate the communication protocol"""
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
         if self.is_master:
-            #  self.controller.your_method_to_terminate_the_communication()  # when writing your own plugin replace this line
-            ...
+            self.controller.protocol.close_connection()
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -96,43 +88,28 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        ## TODO for your custom plugin
-        if param.name() == 'axis':
-            self.axis_unit = self.controller.your_method_to_get_correct_axis_unit()
-            # do this only if you can and if the units are not known beforehand, for instance
-            # if the motors connected to the controller are of different type (mm, µm, nm, , etc...)
-            # see BrushlessDCMotor from the thorlabs plugin for an exemple
+        if param.name() == 'ip_address':
+            self.controller.protocol.close_connection()
+            self.ip = self.settings.child('ip_address').value()
+        elif param.name() == 'ramp_speed':
+            self.ramp_speed = self.settings.child('ramp_speed').value()
+            self.controller.set_sp_rate_up(self.ramp_speed)
+            self.controller.set_sp_rate_down(self.ramp_speed)
 
-        elif param.name() == "a_parameter_you've_added_in_self.params":
-           self.controller.your_method_to_apply_this_param_change()
-        else:
-            pass
 
     def ini_stage(self, controller=None):
-        """Actuator communication initialization
-
-        Parameters
-        ----------
-        controller: (object)
-            custom object of a PyMoDAQ plugin (Slave case). None if only one actuator by controller (Master case)
-
-        Returns
-        -------
-        info: str
-        initialized: bool
-            False if initialization failed otherwise True
-        """
-        raise NotImplementedError  # TODO when writing your own plugin remove this line and modify the ones below
-        if self.is_master:  # is needed when controller is master
-            self.controller = PythonWrapperObjectOfYourInstrument(arg1, arg2, ...) #  arguments for instantiation!)
-            initialized = self.controller.a_method_or_atttribute_to_check_if_init()  # todo
-            # todo: enter here whatever is needed for your controller initialization and eventual
-            #  opening of the communication channel
+        if self.is_master:
+            self.controller = EurothermEPC3008(self.ip)
+            self.settings.child('ramp_unit').setValue(str(self.controller.get_sp_rate_units()))
+            current_value = self.get_actuator_value()
+            self.move_abs(current_value)
+            self.emit_status(ThreadCommand('move_done', [current_value]))
+            initialized = True #à changer
         else:
             self.controller = controller
             initialized = True
 
-        info = "Whatever info you want to log"
+        info = f"EPC3008 {self.ip} connected"
         return info, initialized
 
     def move_abs(self, value: DataActuator):
@@ -142,46 +119,32 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         ----------
         value: (float) value of the absolute target positioning
         """
-
         value = self.check_bound(value)  #if user checked bounds, the defined bounds are applied here
         self.target_value = value
-        value = self.set_position_with_scaling(value)  # apply scaling if the user specified one
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_set_an_absolute_value(value.value(self.axis_unit))  # when writing your own plugin replace this line
-        self.emit_status(ThreadCommand('Update_Status', ['Some info you want to log']))
+        self.controller.set_target_sp(self.target_value)
+        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value}°C']))
 
     def move_rel(self, value: DataActuator):
         """ Move the actuator to the relative target actuator value defined by value
-
         Parameters
         ----------
         value: (float) value of the relative target positioning
         """
-        value = self.check_bound(self.current_position + value) - self.current_position
-        self.target_value = value + self.current_position
-        value = self.set_position_relative_with_scaling(value)
 
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_set_a_relative_value(value.value(self.axis_unit))  # when writing your own plugin replace this line
-        self.emit_status(ThreadCommand('Update_Status', ['Some info you want to log']))
+        value = self.check_bound(self.current_value + value) - self.current_value
+        self.target_value = value + self.current_value
+        self.controller.set_target_sp(self.target_value)
+        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value}°C']))
 
     def move_home(self):
         """Call the reference method of the controller"""
-
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_get_to_a_known_reference()  # when writing your own plugin replace this line
-        self.emit_status(ThreadCommand('Update_Status', ['Some info you want to log']))
+        present_temp = self.get_actuator_value()
+        self.move_abs(present_temp)
 
     def stop_motion(self):
         """Stop the actuator and emits move_done signal"""
-
-        ## TODO for your custom plugin
-        raise NotImplementedError  # when writing your own plugin remove this line
-        self.controller.your_method_to_stop_positioning()  # when writing your own plugin replace this line
-        self.emit_status(ThreadCommand('Update_Status', ['Some info you want to log']))
+        present_sp=self.controller.get_working_sp()
+        self.move_abs(present_sp)
 
 
 if __name__ == '__main__':

@@ -1,15 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jun 24 16:31:17 2025
-
-@author: bpons
-"""
 from pymodbus.client import ModbusTcpClient   # pip install pymodbus
 import nest_asyncio
 nest_asyncio.apply()
-import numpy as np
-import asyncio
-import time
+import ipaddress
 
 # This first class aims to implement the protocol used by EPC3008 devices (Modbus TCP).
 class ModbusTCP :
@@ -89,84 +81,28 @@ class ModbusTCP :
         if number > 2**(power - 1):
             number = number - 2**power
         return round(number * (1 / resolution_factor), 4)
-
-    @staticmethod
-    def get_ending_time(duration : str) -> str:
-        """Returns the ending time in HH:MM:SS format."""
-        current_time = time.strftime("%H:%M:%S", time.localtime())
-        current_hour = int(current_time[:2]) + int(duration[:2])
-        current_minute = int(current_time[3:5]) + int(duration[3:5])
-        current_second = int(current_time[6:]) + int(duration[6:])
-        time_list = [current_second, current_minute, current_hour]
-        for i in range(0, 2):
-            if time_list[i] >= 60 :
-                time_list[i+1] += time_list[i]//60
-            time_list[i] = time_list[i]%60
-            if time_list[i]<10:
-                time_list[i] = '0' + str(time_list[i])
-            else : 
-                time_list[i] = str(time_list[i])
-        if time_list[2] >= 24:
-            time_list[2] = time_list[2]%60
-            # Note : if the experiment is more than a day long, add conditions for the date.
-        if time_list[2] < 10:
-            time_list[2] = '0' + str(time_list[2])
-        else : 
-            time_list[2] = str(time_list[2])
-        return time_list[2] + ':' + time_list[1] + ':' + time_list[0]
-        
     
 class EurothermEPC3008:
     """Class for communicating with an EPC3008 instrument through Ethernet.
     It contains the methods I thought were essential as well as more complex ones aiming to
-    facilitate the user's final experience."""
-    
-    def __init__(self, ip : str = None):
-        self.resolution_factor = 10 #valeur par défaut, la température lue est multipliée par 10 en sortie du régulateur
+    facilitate the user's final experience.
+    Temperature measured by the EPC is multiplied by 10. resolution_factor = 10 means
+    that we want to devide the measure temp by 10 in order to get the correct value"""
+    def __init__(self, ip: str, resolution_factor: int = 10):
+        try:
+            ip=ip.replace(" ", "")
+            ipaddress.ip_address(ip)
+        except ValueError as e:
+            raise ValueError(f"Invalid IP address: {ip}") from e
+
+        self.ip = ip
+        self.resolution_factor = resolution_factor
         try:
             self.protocol = ModbusTCP(ip)
-        except:
-            pass
-        if not self.protocol.client:
-            raise ConnectionError(f"addess {ip} not found")
+        except Exception as e:
+            raise ConnectionError(f"Could not connect to {ip}: {e}") from e
+        self.connected = True
         self.set_automatic_mode()
-
-    # def initialize_regulator(self, target_value: float = None, sp_high_limit: float = None, sp_low_limit: float = None) -> bool:
-    #     """Initializes the regulator with specified values and returns True if successful."""
-    #     if not self.protocol.client:
-    #         return False
-    #
-    #     # Récupère la résolution, avec une valeur par défaut si échec
-    #     resolution = self.get_resolution()
-    #     if resolution is None:
-    #         self.resolution_factor = 1  # Valeur par défaut
-    #     else:
-    #         self.resolution_factor = resolution
-    #
-    #     # Initialise les valeurs
-    #     self.list_of_init_values = [time.strftime("%Y-%m-%d", time.localtime()), time.strftime("%H:%M:%S", time.localtime())]
-    #     self.force_standby()
-    #     self.list_of_init_values.append(self.get_temp_units())
-    #     self.list_of_init_values.append(self.get_sp_rate_units())
-    #     print(f"Regulator's units are : {self.list_of_init_values[2]} for set point and {self.list_of_init_values[3]} for ramp's speed.")
-    #     self.list_of_init_values.append(self.get_pv_status())
-    #
-    #     if target_value is not None:
-    #         self.set_target_sp(target_value)
-    #     self.list_of_init_values.append(self.get_target_sp())
-    #
-    #     if sp_high_limit is not None:
-    #         self.set_sp_high_limit(sp_high_limit)
-    #     self.list_of_init_values.append(self.get_sp_high_limit())
-    #
-    #     if sp_low_limit is not None:
-    #         self.set_sp_low_limit(sp_low_limit)
-    #     self.list_of_init_values.append(self.get_sp_low_limit())
-    #
-    #     self.stop_standby()
-    #     self.set_automatic_mode()
-    #
-    #     return True
 
     # The following methods read or write values to EPC3008 devices.
     # Addresses may change between units, verify them in Eurotherm iTools software.
@@ -192,6 +128,7 @@ class EurothermEPC3008:
     # LOOP tab
     adr_mode_auto_manual = 273
     adr_target_sp = 2
+    adr_working_sp = 5
     adr_integral_hold = 264
     adr_sp_high_limit = 111
     adr_sp_low_limit = 112
@@ -287,6 +224,11 @@ class EurothermEPC3008:
         """Sets the target set point value."""
         sp_value = self.protocol.encode_number(value, self.resolution_factor)
         self.protocol.write_register(self.adr_target_sp, [sp_value])
+
+    def get_working_sp(self) -> float:
+        """Returns target set point value."""
+        resp = self.protocol.read_holding_register(self.adr_working_sp)
+        return self.protocol.decode_number(resp[0], self.resolution_factor)
     
     def get_integral_hold_status(self) -> str:
         """Returns integral hold status."""
@@ -365,59 +307,4 @@ class EurothermEPC3008:
         if not (0 <= resp[0] < len(list_values)) & (type(resp[0]) == int):
             raise ValueError(f"Error in get_integral_hold_status value : {resp} not expected.")
         return list_values[resp[0]]
-    
-    
-    # The following methods use the above ones to create more complex applications.
-    # Do not hesitate to modify them as needed !
-    
-    def create_ramp(self, target_value : float, rate_up : float, rate_down : float) -> list:
-        """Creates a ramp with specified conditions.
-        ===========================================
-        target_value: the target value for the ramp.
-        rate_up: the ramp up speed value.
-        rate_down: the ramp down speed value."""
-        self.set_sp_rate_up(rate_up)
-        self.set_sp_rate_down(rate_down)
-        set_values = [time.strftime("%Y-%m-%d", time.localtime()), time.strftime("%H:%M:%S", time.localtime())]
-        self.set_target_sp(target_value)
-#        print(f"Ramp's status : {self.get_sp_rate_done()}.")
-        set_values.append(self.get_target_sp())
-        set_values.append(self.get_sp_rate_up())
-        set_values.append(self.get_sp_rate_down())
-        return set_values
-    
-    def useful_data(self) -> list:
-        """Returns a list of useful regulator's data."""
-        # The following commands define the data grabbed in a loop from the regulator.
-        return [time.strftime("%Y-%m-%d", time.localtime()),
-                                      time.strftime("%H:%M:%S", time.localtime()), self.get_pv(),
-                                      self.get_target_sp(), self.get_sp_rate_done()]
-
-    
-    async def automatic_data_grab_temperature_value(self, target_temp : float, sleeping_time : int = 1,
-                                                    limit_duration : str = '00:00:00') -> np.ndarray:
-        """Returns an array of data grabbed every sleeping_time while TC temperature is different from target_temp.
-        ===================================
-        target_temp : float (target temperature to stop grabbing data)
-        sleeping_time : int (default = 1, waiting time in seconds between two consecutive data grabs)
-        limit_duration : str (default = '00:00:00', maximum duration of the loop in HH:MM:SS format)"""
-        list_of_grabbed_data = []
-        ending_time = self.protocol.get_ending_time(limit_duration)
-        temp_value = self.get_pv()
-        if temp_value < target_temp :
-            while (ending_time > time.strftime("%H:%M:%S", time.localtime()))&(temp_value < target_temp):
-                list_of_grabbed_data.append(self.useful_data())
-                await asyncio.sleep(sleeping_time)
-                temp_value = self.get_pv()
-        elif temp_value > target_temp :
-            while (ending_time > time.strftime("%H:%M:%S", time.localtime()))&(temp_value > target_temp):
-                list_of_grabbed_data.append(self.useful_data())
-                await asyncio.sleep(sleeping_time)
-                temp_value = self.get_pv()
-        else :
-            while (ending_time > time.strftime("%H:%M:%S", time.localtime()))&(temp_value == target_temp):
-                list_of_grabbed_data.append(self.useful_data())
-                await asyncio.sleep(sleeping_time)
-                temp_value = self.get_pv()
-        return np.array(list_of_grabbed_data)
 
