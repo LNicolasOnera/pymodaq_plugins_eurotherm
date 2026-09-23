@@ -61,9 +61,9 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         -------
         float: The position obtained after scaling conversion.
         """
-        # pos = DataActuator(data=[np.array([self.controller.get_pv()])],  # when writing your own plugin replace this line
-        #                    units=self.axis_unit)
-        pos = DataActuator(data=self.controller.get_pv(), units=self.axis_unit)
+        pos = DataActuator(data=[np.array([self.controller.get_pv()])],
+                           units=self.axis_unit)
+        # pos = DataActuator(data=self.controller.get_pv(), units=self.axis_unit)
         pos = self.get_position_with_scaling(pos)
         return pos
 
