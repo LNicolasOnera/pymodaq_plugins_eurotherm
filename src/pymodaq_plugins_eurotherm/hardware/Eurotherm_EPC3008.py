@@ -3,6 +3,23 @@ import nest_asyncio
 nest_asyncio.apply()
 import ipaddress
 
+_connections: dict = {}
+
+def get_epc3008(ip: str) -> 'EurothermEPC3008':
+    epc = _connections.get(ip)
+    if epc is not None:
+        try:
+            epc.get_pv()
+            return epc
+        except Exception:
+            try:
+                epc.protocol.close_connection()
+            except Exception:
+                pass
+    epc = EurothermEPC3008(ip)
+    _connections[ip] = epc
+    return epc
+
 # This first class aims to implement the protocol used by EPC3008 devices (Modbus TCP).
 class ModbusTCP :
     """Class of all the methods to communicate with an EPC 3008 device from creating the command
@@ -23,11 +40,13 @@ class ModbusTCP :
 
     def close_connection(self) -> None:
         """Closes the connection with the EPC 3008 device."""
-        if self.client:
+        if self.client is not None:
             try:
                 self.client.close()
-            except Exception as e:
-                print(f"Closing failure: {e}")
+            except Exception:
+                pass
+            finally:
+                self.client = None
 
     def read_holding_register(self, address: int, count: int = 1) -> list | None:
         """Reads holding register(s) from the device. Returns None if failed."""
@@ -270,7 +289,7 @@ class EurothermEPC3008:
         """Returns ramp's temporal units."""
         resp = self.protocol.read_holding_register(self.adr_sp_rate_units)
         list_values = ["per second", "per minute", "per hour"]
-        if not (0 <= resp[0] < len(list_values)) & (type(resp[0]) == int):
+        if not (isinstance(resp[0], int) and 0 <= resp[0] < len(list_values)):
             raise ValueError(f"Error in get_integral_hold_status value : {resp} not expected.")
         return list_values[resp[0]]
 

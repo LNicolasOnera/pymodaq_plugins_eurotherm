@@ -6,7 +6,7 @@ from pymodaq.control_modules.move_utility_classes import (DAQ_Move_base, comon_p
 from pymodaq_utils.utils import ThreadCommand  # object used to send info back to the main thread
 from pymodaq_gui.parameter import Parameter
 
-from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008
+from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008, get_epc3008
 
 class DAQ_Move_EPC3008(DAQ_Move_base):
     """ Instrument plugin class for an actuator.
@@ -38,16 +38,22 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
 
     params = [
         {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
-        {'title': 'EPC Name', 'name': 'epc_name', 'type': 'str', 'value': 'Test'},
-        {'title': 'Ramp speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
-        {'title': 'Ramp unit', 'name': 'ramp_unit', 'type': 'str', 'value': '', 'readonly': True},
+        {'title': 'Ramp params ', 'name': 'ramp_param', 'type': 'group', 'children': [
+            {'title': 'Speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
+            {'title': 'Speed verif', 'name': 'ramp_verif', 'type': 'str', 'value': '', 'readonly': True},
+            {'title': 'Ramp unit', 'name': 'ramp_unit', 'type': 'str', 'value': '', 'readonly': True}
+            ]},
+         {'title': 'Temp limits', 'name': 'limits', 'type': 'group', 'children': [
+             {'title': 'High', 'name': 'high_limit', 'type': 'int'},
+             {'title': 'Low', 'name': 'low_limit', 'type': 'int'},
+             {'title': 'Limits verif', 'name': 'limits_verif', 'type': 'str', 'value': '', 'readonly': True},
+         ]},
                 ] + comon_parameters_fun(is_multiaxes, axis_names=_axis_names, epsilon=0.1)
 
     def ini_attributes(self):
         self.controller: EurothermEPC3008 = None
         self.ip = self.settings.child('ip_address').value()
-        self.epc_name=self.settings.child('epc_name').value()
-        self.ramp_speed = self.settings.child('ramp_speed').value()
+        self.ramp_speed = self.settings.child('ramp_param', 'ramp_speed').value()
 
     def get_actuator_value(self) -> DataActuator:
         """Get the current value from the hardware with scaling conversion.
@@ -76,9 +82,15 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         return True
 
     def close(self):
-        """Terminate the communication protocol"""
         if self.is_master:
             self.controller.protocol.close_connection()
+
+    def set_ramp(self):
+        self.ramp_speed = self.settings.child('ramp_param', 'ramp_speed').value()
+        self.controller.set_sp_rate_up(self.ramp_speed)
+        self.controller.set_sp_rate_down(self.ramp_speed)
+        self.settings.child('ramp_param', 'ramp_verif').setValue(
+            f"{self.controller.get_sp_rate_up()} / {self.controller.get_sp_rate_down()}")
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -92,15 +104,29 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
             self.controller.protocol.close_connection()
             self.ip = self.settings.child('ip_address').value()
         elif param.name() == 'ramp_speed':
-            self.ramp_speed = self.settings.child('ramp_speed').value()
-            self.controller.set_sp_rate_up(self.ramp_speed)
-            self.controller.set_sp_rate_down(self.ramp_speed)
-
+            self.set_ramp()
+        elif param.name() == 'high_limit':
+            self.controller.set_sp_high_limit(self.settings.child('limits', 'high_limit').value())
+            self.settings.child('limits', 'limits_verif').setValue(
+                f"{self.controller.get_sp_low_limit()} / {self.controller.get_sp_high_limit()} ")
+        elif param.name() == 'low_limit':
+            self.controller.set_sp_low_limit(self.settings.child('limits', 'low_limit').value())
+            self.settings.child('limits', 'limits_verif').setValue(
+                f"{self.controller.get_sp_low_limit()} / {self.controller.get_sp_high_limit()} ")
 
     def ini_stage(self, controller=None):
         if self.is_master:
-            self.controller = EurothermEPC3008(self.ip)
-            self.settings.child('ramp_unit').setValue(str(self.controller.get_sp_rate_units()))
+            self.controller = get_epc3008(self.ip)   # ← au lieu de EurothermEPC3008(self.ip)
+
+            try:
+                self.settings.child('ramp_param', 'ramp_unit').setValue(str(self.controller.get_sp_rate_units()))
+            except Exception as e:
+                self.emit_status(ThreadCommand('Update_Status', [f'Could not read ramp unit: {e}']))
+            self.settings.child('limits', 'limits_verif').setValue(
+                f"{self.controller.get_sp_low_limit()} / {self.controller.get_sp_high_limit()} ")
+
+            self.set_ramp()
+
             current_value = self.get_actuator_value()
             self.move_abs(current_value)
             self.emit_status(ThreadCommand('move_done', [current_value]))

@@ -34,8 +34,6 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
     """
     params = comon_parameters+[
         {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
-        {'title': 'EPC Name', 'name': 'epc_name', 'type': 'str', 'value': 'Test'},
-        {'title': 'Ramp speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
         {'title': 'Units', 'name': 'units', 'type': 'group', 'children': [
             {'title': 'Temperature', 'name': 'temp', 'type': 'str', 'value': '', 'readonly': True},
             {'title': 'Ramp speed', 'name': 'ramp_speed', 'type': 'str', 'value': '', 'readonly': True}
@@ -45,8 +43,6 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
     def ini_attributes(self):
         self.controller: EurothermEPC3008 = None
         self.ip = self.settings.child('ip_address').value()
-        self.epc_name=self.settings.child('epc_name').value()
-        self.ramp_speed = self.settings.child('ramp_speed').value()
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -74,11 +70,11 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
         self.settings.child('units', 'temp').setValue(str(self.controller.get_temp_units()))
         self.settings.child('units', 'ramp_speed').setValue(str(self.controller.get_sp_rate_units()))
 
-        self.dte_signal_temp.emit(DataToExport(name=self.epc_name,
+        self.dte_signal_temp.emit(DataToExport(name='EPC3008',
                                                data=[DataFromPlugins(name='Temp (°C)',
                                                                     data=[np.array([0])],
                                                                     dim='Data0D',
-                                                                    labels=[self.epc_name])]))
+                                                                    labels=['Temp (°C)'])]))
 
         print(f"Connected to {self.ip}")
         info = f"EPC3008 {self.ip} connected"
@@ -92,7 +88,7 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
         """Start a grab from the detector"""
 
         data = np.array([self.controller.get_pv()])
-        self.dte_signal.emit(DataToExport(name=self.epc_name,
+        self.dte_signal.emit(DataToExport(name='EPC3008',
                                           data=[DataFromPlugins(name='Temp (°C)', data=data,
                                                                 dim='Data0D', labels=['Temp (°C)'])]))
 
