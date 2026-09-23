@@ -2,6 +2,7 @@ from pymodbus.client import ModbusTcpClient   # pip install pymodbus
 import nest_asyncio
 nest_asyncio.apply()
 import ipaddress
+import threading
 
 _connections: dict = {}
 
@@ -26,6 +27,7 @@ class ModbusTCP :
     to sending it and reading its response."""
     
     def __init__(self, ip : str):
+        self._lock = threading.Lock()
         self.client = None
         self.open_connection(ip)
 
@@ -50,28 +52,30 @@ class ModbusTCP :
 
     def read_holding_register(self, address: int, count: int = 1) -> list | None:
         """Reads holding register(s) from the device. Returns None if failed."""
-        if not self.client:
-            return None
-        try:
-            resp = self.client.read_holding_registers(address, count=count)
-            if resp:
-                if resp.isError():
-                    return None
-                return resp.registers
-            else:
+        with self._lock:
+            if not self.client:
                 return None
-        except Exception:
-            return None
+            try:
+                resp = self.client.read_holding_registers(address, count=count)
+                if resp:
+                    if resp.isError():
+                        return None
+                    return resp.registers
+                else:
+                    return None
+            except Exception:
+                return None
 
     def write_register(self, address : int, value : list[int]) -> None:
         """Connects to the EPC 3008 device and writes the register(s) at the given address."""
-        try :
-            resp = self.client.write_registers(address, value)
-            if resp:
-                if resp.isError():
-                    raise ConnectionError(f"Pymodbus returns an error : {resp}.")
-        except Exception:
-            return False
+        with self._lock:
+            try :
+                resp = self.client.write_registers(address, value)
+                if resp:
+                    if resp.isError():
+                        raise ConnectionError(f"Pymodbus returns an error : {resp}.")
+            except Exception:
+                return False
 
     @staticmethod
     def decode_resp_to_string(resp : list[int]) -> str:
@@ -201,6 +205,8 @@ class EurothermEPC3008:
     def get_pv(self) -> float:
         """Returns regulator's TC measured value."""
         resp = self.protocol.read_holding_register(self.adr_pv)
+        if resp is None:
+            raise ConnectionError(f"Échec de lecture de la PV sur EPC3008 ({self.ip})")
         return self.protocol.decode_number(resp[0], self.resolution_factor)
     
     def get_pv_status(self) -> str:
