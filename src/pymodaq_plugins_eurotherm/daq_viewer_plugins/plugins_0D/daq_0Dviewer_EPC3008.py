@@ -7,7 +7,7 @@ from pymodaq_gui.parameter import Parameter
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.data import DataFromPlugins
 
-from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008
+from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008, get_epc3008
 
 
 class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
@@ -23,14 +23,6 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
         * The version of the operating system.
         * Installation instructions: what manufacturer’s drivers should be installed to make it run?
 
-    Attributes:
-    -----------
-    controller: object
-        The particular object that allow the communication with the hardware, in general a python wrapper around the
-         hardware library.
-         
-    # TODO add your particular attributes here if any
-
     """
     params = comon_parameters+[
         {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
@@ -45,13 +37,7 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
         self.ip = self.settings.child('ip_address').value()
 
     def commit_settings(self, param: Parameter):
-        """Apply the consequences of a change of value in the detector settings
-
-        Parameters
-        ----------
-        param: Parameter
-            A given parameter (within detector_settings) whose value has been changed by the user
-        """
+        """Apply the consequences of a change of value in the detector settings"""
         if param.name() == "ip_address":
             self.controller.protocol.close_connection()
             self.ip=self.settings.child('ip_address').value()
@@ -60,7 +46,7 @@ class DAQ_0DViewer_EPC3008(DAQ_Viewer_base):
     def ini_detector(self, controller=None):
         """Detector communication initialization"""
         if self.is_master:
-            self.controller = EurothermEPC3008(self.ip)
+            self.controller = get_epc3008(self.ip)
 
             initialized = True
         else:

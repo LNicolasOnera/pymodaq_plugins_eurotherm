@@ -7,6 +7,11 @@ import threading
 _connections: dict = {}
 
 def get_epc3008(ip: str) -> 'EurothermEPC3008':
+    """Returns the opend connection for this IP if existing or open a new one.
+    This method was created to check if an EPC3008 was already opened before opening it again.
+    It prevents crashes after several connections-disconnections due to an limited amount of modbus TCP sockets
+    available (3 or 4)
+    """
     epc = _connections.get(ip)
     if epc is not None:
         try:

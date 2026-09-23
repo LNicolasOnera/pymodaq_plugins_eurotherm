@@ -67,20 +67,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         pos = self.get_position_with_scaling(pos)
         return pos
 
-    def user_condition_to_reach_target(self) -> bool:
-        """ Implement a condition for exiting the polling mechanism and specifying that the
-        target value has been reached
-
-       Returns
-        -------
-        bool: if True, PyMoDAQ considers the target value has been reached
-        """
-        # TODO either delete this method if the usual polling is fine with you, but if need you can
-        #  add here some other condition to be fullfilled either a completely new one or
-        #  using or/and operations between the epsilon_bool and some other custom booleans
-        #  for a usage example see DAQ_Move_brushlessMotor from the Thorlabs plugin
-        return True
-
     def close(self):
         if self.is_master:
             self.controller.protocol.close_connection()
@@ -93,13 +79,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
             f"{self.controller.get_sp_rate_up()} / {self.controller.get_sp_rate_down()}")
 
     def commit_settings(self, param: Parameter):
-        """Apply the consequences of a change of value in the detector settings
-
-        Parameters
-        ----------
-        param: Parameter
-            A given parameter (within detector_settings) whose value has been changed by the user
-        """
         if param.name() == 'ip_address':
             self.controller.protocol.close_connection()
             self.ip = self.settings.child('ip_address').value()
@@ -116,12 +95,9 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
 
     def ini_stage(self, controller=None):
         if self.is_master:
-            self.controller = get_epc3008(self.ip)   # ← au lieu de EurothermEPC3008(self.ip)
+            self.controller = get_epc3008(self.ip)
 
-            try:
-                self.settings.child('ramp_param', 'ramp_unit').setValue(str(self.controller.get_sp_rate_units()))
-            except Exception as e:
-                self.emit_status(ThreadCommand('Update_Status', [f'Could not read ramp unit: {e}']))
+            self.settings.child('ramp_param', 'ramp_unit').setValue(str(self.controller.get_sp_rate_units()))
             self.settings.child('limits', 'limits_verif').setValue(
                 f"{self.controller.get_sp_low_limit()} / {self.controller.get_sp_high_limit()} ")
 
@@ -130,7 +106,7 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
             current_value = self.get_actuator_value()
             self.move_abs(current_value)
             self.emit_status(ThreadCommand('move_done', [current_value]))
-            initialized = True #à changer
+            initialized = True if self.controller is not None else False
         else:
             self.controller = controller
             initialized = True
@@ -140,7 +116,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
 
     def move_abs(self, value: DataActuator):
         """ Move the actuator to the absolute target defined by value
-
         Parameters
         ----------
         value: (float) value of the absolute target positioning
@@ -151,12 +126,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value}°C']))
 
     def move_rel(self, value: DataActuator):
-        """ Move the actuator to the relative target actuator value defined by value
-        Parameters
-        ----------
-        value: (float) value of the relative target positioning
-        """
-
         value = self.check_bound(self.current_value + value) - self.current_value
         self.target_value = value + self.current_value
         self.controller.set_target_sp(self.target_value)
@@ -171,7 +140,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         """Stop the actuator and emits move_done signal"""
         present_sp=self.controller.get_working_sp()
         self.move_abs(present_sp)
-
 
 if __name__ == '__main__':
     main(__file__)
