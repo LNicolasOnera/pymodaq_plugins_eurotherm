@@ -21,20 +21,12 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         * The version of the operating system.
         * Installation instructions: what manufacturer’s drivers should be installed to make it run?
 
-    Attributes:
-    -----------
-    controller: object
-        The particular object that allow the communication with the hardware, in general a python wrapper around the
-         hardware library.
-         
-    # TODO add your particular attributes here if any
-
     """
     is_multiaxes = False
     _axis_names: Union[List[str], Dict[str, int]] = ['Temperature']
     _controller_units: Union[str, List[str]] = '°C'
     _epsilon: Union[float, List[float]] = 0.1
-    data_actuator_type = DataActuatorType.float
+    data_actuator_type = DataActuatorType.DataActuator
 
     params = [
         {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
@@ -115,31 +107,26 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
         return info, initialized
 
     def move_abs(self, value: DataActuator):
-        """ Move the actuator to the absolute target defined by value
-        Parameters
-        ----------
-        value: (float) value of the absolute target positioning
-        """
-        value = self.check_bound(value)  #if user checked bounds, the defined bounds are applied here
+        value = self.check_bound(value)
         self.target_value = value
-        self.controller.set_target_sp(self.target_value)
-        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value}°C']))
+        self.controller.set_target_sp(value.value())
+        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value.value()} °C']))
 
     def move_rel(self, value: DataActuator):
         value = self.check_bound(self.current_value + value) - self.current_value
         self.target_value = value + self.current_value
-        self.controller.set_target_sp(self.target_value)
-        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {value}°C']))
+        self.controller.set_target_sp(self.target_value.value())
+        self.emit_status(ThreadCommand('Update_Status', [f'Setpoint {self.target_value.value()} °C']))
 
     def move_home(self):
+        #à changer peut être
         """Call the reference method of the controller"""
         present_temp = self.get_actuator_value()
         self.move_abs(present_temp)
 
     def stop_motion(self):
-        """Stop the actuator and emits move_done signal"""
-        present_sp=self.controller.get_working_sp()
-        self.move_abs(present_sp)
+        present_sp = self.controller.get_working_sp()
+        self.move_abs(DataActuator(data=float(present_sp), units=self.axis_unit))
 
 if __name__ == '__main__':
     main(__file__)
