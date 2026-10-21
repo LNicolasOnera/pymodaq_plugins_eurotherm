@@ -9,18 +9,14 @@ from pymodaq_gui.parameter import Parameter
 from pymodaq_plugins_eurotherm.hardware.Eurotherm_EPC3008 import EurothermEPC3008, get_epc3008
 
 class DAQ_Move_EPC3008(DAQ_Move_base):
-    """ Instrument plugin class for an actuator.
-    
-    This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Move module through inheritance via
-    DAQ_Move_base. It makes a bridge between the DAQ_Move module and the Python wrapper of a particular instrument.
-
-    TODO Complete the docstring of your plugin with:
-        * The set of controllers and actuators that should be compatible with this instrument plugin.
-        * With which instrument and controller it has been tested.
-        * The version of PyMoDAQ during the test.
-        * The version of the operating system.
-        * Installation instructions: what manufacturer’s drivers should be installed to make it run?
-
+    """
+    Developed and tested fpr Eurothemr EPC3008 instrument. May work with EPC3004 and EPC3016, which share the same
+    datasheet (not tested)
+    Developed and tested with Python 3.12
+    Tested with PyMoDAQ 5.2 and 5.3
+    May require Eurotherm iTools Software (some drivers may be contained in this software, I did not try to make
+    this plugin working without it installed).
+        https://www.eurotherm.com/fr/products/regulateur-pid-indicateurs-unites-alarme/logiciel/eurotherm-itools/
     """
     is_multiaxes = False
     _axis_names: Union[List[str], Dict[str, int]] = ['Temperature']
@@ -29,7 +25,7 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
     data_actuator_type = DataActuatorType.DataActuator
 
     params = [
-        {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': '134.212.36.218'},
+        {'title': 'IP address', 'name': 'ip_address', 'type': 'str', 'value': 'xxx.xxx.xxx.xxx'},
         {'title': 'Ramp params ', 'name': 'ramp_param', 'type': 'group', 'children': [
             {'title': 'Speed (°C/min)', 'name': 'ramp_speed', 'type': 'int', 'value': 20},
             {'title': 'Speed verif', 'name': 'ramp_verif', 'type': 'str', 'value': '', 'readonly': True},
@@ -120,7 +116,6 @@ class DAQ_Move_EPC3008(DAQ_Move_base):
 
     def move_home(self):
         #à changer peut être
-        """Call the reference method of the controller"""
         present_temp = self.get_actuator_value()
         self.move_abs(present_temp)
 
